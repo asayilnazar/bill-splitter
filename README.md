@@ -155,3 +155,14 @@ You must understand every line you submit. We check this with your video and in 
 5. Paste the repository link and the video link in the application form.
 
 We will run `pnpm install && pnpm check && pnpm typecheck && pnpm test` on your repository.
+
+
+## Decisions
+
+1. **One conditional UPDATE for payments.** The pay route runs `UPDATE shares SET paid_at = ?, payment_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL`. SQLite runs one write at a time, so when two requests pay the same share, only one gets `changes = 1`. The other reads the row back: the same `Idempotency-Key` returns 200 with the same result, and a different key returns 409. I chose this over "read, then write" because that leaves a gap where both requests can see the share as unpaid.
+
+2. **Whole cents everywhere, with a database CHECK as a backstop.** The API accepts only a safe positive integer for `totalCents`. The `bills_total_positive` constraint also rejects bad totals if validation is ever bypassed. The web page converts "12.50" to cents with integer math, so decimals are never used for money.
+
+3. **Bill and shares saved together with `db.batch`.** A bill can never exist without its shares. Trade-off: members are read just before the batch, so a member added in that tiny gap would be missed on that bill. I accepted this to keep the code simple. A stricter version would use a single `INSERT ... SELECT` that reads members and writes shares in one statement.
+
+Note: `GET /api/homes/:homeId/bills` is not in the spec. I added it because the page must show bills and their shares.
